@@ -1,0 +1,169 @@
+version: '3.8'
+
+services:
+  # Basic Node.js Server
+  basic-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webserver-basic
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    command: ["node", "src/server-basic.js"]
+    restart: unless-stopped
+    networks:
+      - webserver-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Cluster Node.js Server
+  cluster-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webserver-cluster
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    command: ["node", "src/server-cluster.js"]
+    restart: unless-stopped
+    networks:
+      - webserver-network
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+        reservations:
+          cpus: '2'
+          memory: 512M
+
+  # Express.js Server
+  express-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webserver-express
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - CACHE_TTL=60000
+    command: ["node", "src/server-express.js"]
+    restart: unless-stopped
+    networks:
+      - webserver-network
+
+  # ML Inference Server (Single Process)
+  ml-server-single:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ml-server-single
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - CLUSTER=false
+    command: ["node", "src/ml-server.js"]
+    restart: unless-stopped
+    networks:
+      - webserver-network
+
+  # ML Inference Server (Cluster Mode)
+  ml-server-cluster:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ml-server-cluster
+    ports:
+      - "3004:3003"
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - CLUSTER=true
+    command: ["node", "src/ml-server.js"]
+    restart: unless-stopped
+    networks:
+      - webserver-network
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+
+  # NGINX Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - basic-server
+      - cluster-server
+      - express-server
+    restart: unless-stopped
+    networks:
+      - webserver-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+    networks:
+      - webserver-network
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3005:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - webserver-network
+
+networks:
+  webserver-network:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:

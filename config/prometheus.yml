@@ -1,0 +1,33 @@
+# Prometheus configuration for monitoring Node.js servers
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'basic-nodejs'
+    static_configs:
+      - targets: ['basic-server:3000']
+        labels:
+          server: 'basic'
+          type: 'nodejs'
+  
+  - job_name: 'cluster-nodejs'
+    static_configs:
+      - targets: ['cluster-server:3001']
+        labels:
+          server: 'cluster'
+          type: 'nodejs'
+  
+  - job_name: 'express'
+    static_configs:
+      - targets: ['express-server:3002']
+        labels:
+          server: 'express'
+          type: 'nodejs'
+  
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:80']
+        labels:
+          server: 'nginx'
+          type: 'proxy'
